@@ -1,0 +1,29 @@
+#!/bin/bash
+
+source "$(dirname "${BASH_SOURCE[0]}")/common_functions.sh"
+
+
+declare -r app_name="$(relpath $1)"; shift;
+declare -r app_dir="$(relpath $1)"; shift;
+declare -r root_dir="$(relpath $1)"; shift;
+
+declare -r build_dir="$root_dir/build_$(uname -m)"
+declare -r test_robot_dir="$root_dir/test/robot"
+
+
+
+variables="$variables -v APP_DIR:$app_dir"
+
+
+
+# Run robot tests
+function run_tests()
+{
+    out_dir=$build_dir/robot
+    mkdir -p $out_dir
+    run  pybot $variables -d $out_dir $test_robot_dir
+}
+
+
+run_tests
+

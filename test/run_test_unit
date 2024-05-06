@@ -1,0 +1,21 @@
+#!/bin/bash
+
+source "$(dirname "${BASH_SOURCE[0]}")/common_functions.sh"
+
+
+declare -r app_name="$1"; shift;
+declare -r app_dir="$(relpath $1)"; shift;
+declare -r root_dir="$(relpath $1)"; shift;
+
+
+
+# Run cunit tests
+function run_tests()
+{
+    cd "${app_dir}"
+    timeout 10 ./"${app_name}" -v2 -b
+}
+
+
+run_tests
+
