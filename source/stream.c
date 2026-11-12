@@ -343,7 +343,7 @@ ssize_t stream_do_write(struct stream *self, const void *buffer, size_t length)
 
     int ret = stream_real_write(self, buffer, length);
     if (ret < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) {
             stream_queue_outgoing_data(self, buffer, length);
             return length;
         }

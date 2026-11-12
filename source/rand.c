@@ -1,5 +1,6 @@
 
 #include "mx/rand.h"
+#include "mx/misc.h"
 #include "mx/log.h"
 
 #include <unistd.h>
@@ -10,9 +11,10 @@
 #include <fcntl.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#ifdef __linux__
 #include <asm/types.h>
 #include <linux/random.h>
-
+#endif
 
 
 
@@ -52,6 +54,12 @@ void rand_dev_close(int fd)
  */
 void rand_dev_add_entropy(int fd, const char *data, unsigned int len, unsigned int entropy_count)
 {
+#ifndef __linux__
+    UNUSED(fd);
+    UNUSED(data);
+    UNUSED(len);
+    UNUSED(entropy_count);
+#else
     struct rand_pool_info *rpi;
 
     rpi = (struct rand_pool_info*) malloc(sizeof(struct rand_pool_info) + len);
@@ -69,6 +77,7 @@ void rand_dev_add_entropy(int fd, const char *data, unsigned int len, unsigned i
     }
 
     free(rpi);
+#endif
 }
 
 

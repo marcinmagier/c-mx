@@ -1,10 +1,12 @@
 
 #include "mx/socket.h"
 #include "mx/net.h"
+#include "mx/misc.h"
 #include "mx/log.h"
 
 #include <unistd.h>
 #include <errno.h>
+#include <string.h>
 #include <fcntl.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -48,11 +50,23 @@ int socket_close(int sock)
 int socket_get_addr_family(int sock)
 {
     int addr_family = 0;
+#ifdef SO_DOMAIN
     socklen_t addr_family_len = sizeof(addr_family);
     int ret = getsockopt(sock, SOL_SOCKET, SO_DOMAIN, &addr_family, &addr_family_len);
     if (ret == -1) {
         ERROR("Cannot get socket address family");
     }
+#else
+    struct sockaddr_storage addr;
+    socklen_t addr_len = sizeof(addr);
+    memset(&addr, 0, sizeof(addr));
+    if (getsockname(sock, (struct sockaddr*)&addr, &addr_len) == -1) {
+        ERROR("Cannot get socket address family");
+    }
+    else {
+        addr_family = addr.ss_family;
+    }
+#endif
     return addr_family;
 
 }
@@ -306,7 +320,7 @@ int socket_listen_inet(int sock, const char *addr, unsigned int port)
 
     struct addrinfo hints, *result;
     memset (&hints, 0, sizeof (hints));
-    hints.ai_family = socket_is_valid(sock) ? AF_UNSPEC : socket_get_addr_family(sock);
+    hints.ai_family = socket_is_valid(sock) ? socket_get_addr_family(sock) : AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags |= AI_PASSIVE;
 

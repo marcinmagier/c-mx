@@ -4,7 +4,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#ifndef __CYGWIN__
 #include <sys/reboot.h>
+#endif
 #include <stdarg.h>
 #include <stdbool.h>
 #include <time.h>
@@ -250,8 +252,12 @@ void log_reset(const logger_t *logger, const char *file, unsigned int line, cons
     }
     else if (logger->reset_result == 2) {
         // Reboot system
+#ifdef __CYGWIN__
+        exit(EXIT_FAILURE);
+#else
         sync();
         reboot(RB_AUTOBOOT);
+#endif
     }
 }
 

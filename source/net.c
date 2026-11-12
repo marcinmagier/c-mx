@@ -244,7 +244,12 @@ bool net_if_get_addr(const char *ifname, struct sockaddr *addr)
         struct ifreq ifr;
         memset(&ifr, 0, sizeof(ifr));
         strcpy(ifr.ifr_name, ifname);
+#ifdef __CYGWIN__
+        // Cygwin declares the ioctl request as int
+        if (ioctl(sock, (int)SIOCGIFADDR, &ifr) < 0) {
+#else
         if (ioctl(sock, SIOCGIFADDR, &ifr) < 0) {
+#endif
             ERROR("Call ioctl SIOCGIFADDR failed with %d", errno);
         }
         else {
@@ -363,8 +368,12 @@ unsigned int net_iface_get_index(struct net_iface *self)
 
 struct rtnl_link_stats* net_iface_get_stats(struct net_iface *self)
 {
+#ifdef AF_PACKET
     if (self->ifa->ifa_addr->sa_family == AF_PACKET)
         return (struct rtnl_link_stats*)self->ifa->ifa_data;
+#else
+    UNUSED(self);
+#endif
 
     return NULL;
 }
