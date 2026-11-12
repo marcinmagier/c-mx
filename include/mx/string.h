@@ -34,7 +34,7 @@ struct xstrtok* xstrtok_new(const char *str);
 struct xstrtok* xstrtok_delete(struct xstrtok *tkzr);
 const char* xstrtok_next(struct xstrtok *tkzr, const char *separators);
 
-size_t xstr_word_len(const char *str, const char *space_chars);
-size_t xstr_space_len(const char *str, const char *space_chars);
+size_t xstrwdlen(const char *str, const char *space_chars);
+size_t xstrsplen(const char *str, const char *space_chars);
 
 #endif /* __MX_STRING_H_ */

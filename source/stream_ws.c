@@ -250,7 +250,7 @@ int stream_ws_handle_handshake_request(struct stream_ws *self)
             return 0;   // Disconnect
         }
 
-        size_t key_len = xstr_word_len(key, NULL);
+        size_t key_len = xstrwdlen(key, NULL);
         key[key_len] = '\0';
         INFO("WebSocket request with %s", key);
 
@@ -304,7 +304,7 @@ int stream_ws_handle_handshake_accept(struct stream_ws *self)
             return 0;   // Disconnect
         }
 
-        size_t key_len = xstr_word_len(key, NULL);
+        size_t key_len = xstrwdlen(key, NULL);
         key[key_len] = '\0';
         INFO("WebSocket response with %s", key);
 

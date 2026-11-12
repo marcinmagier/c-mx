@@ -217,7 +217,7 @@ void test_http_headers(void)
     header_name = http_header_find(view.headers, "second", &header_value);
     CU_ASSERT_PTR_NOT_NULL(header_name);
     CU_ASSERT_PTR_NOT_NULL(header_value);
-    CU_ASSERT_EQUAL(0, xstr_word_len(header_value, NULL));
+    CU_ASSERT_EQUAL(0, xstrwdlen(header_value, NULL));
 
     // remove headers
     http_msg_remove_header(msg, "second");

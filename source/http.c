@@ -76,7 +76,7 @@ const char* http_header_find(const char *headers, const char *name, const char *
     size_t line_len;
 
     do {
-        line_start = line_start + xstr_space_len(line_start, HTTP_WHITESPACE_CHARS);
+        line_start = line_start + xstrsplen(line_start, HTTP_WHITESPACE_CHARS);
         line_end = strstr(line_start, HTTP_LINE_END);
         if (!line_end)
             break;  // Error
@@ -86,13 +86,13 @@ const char* http_header_find(const char *headers, const char *name, const char *
 
         if (!strncasecmp(line_start, name, name_len)) {
             colon = line_start + name_len;
-            colon += xstr_space_len(colon, HTTP_WHITESPACE_CHARS);
+            colon += xstrsplen(colon, HTTP_WHITESPACE_CHARS);
             if (*colon != ':')
                 break; // Error
 
             if (value) {
                 *value = colon + 1;
-                *value += xstr_space_len(*value, HTTP_WHITESPACE_CHARS);
+                *value += xstrsplen(*value, HTTP_WHITESPACE_CHARS);
             }
             return line_start;
         }
@@ -234,7 +234,7 @@ int http_msg_parse_headers(struct http_msg *self, const char *headers)
     const char *line_end;
 
     do {
-        line_start = line_start + xstr_space_len(line_start, HTTP_WHITESPACE_CHARS);
+        line_start = line_start + xstrsplen(line_start, HTTP_WHITESPACE_CHARS);
         line_end = strstr(line_start, HTTP_LINE_END);
         if (!line_end)
             break;  // Error
@@ -272,17 +272,17 @@ int http_msg_parse_request(struct http_msg *self, char *buffer)
 
     size_t len;
 
-    len = xstr_word_len(http_view.method, NULL);
+    len = xstrwdlen(http_view.method, NULL);
     if (len == 0)
         return -1;  // Error
     self->method = xstrndup(http_view.method, len);
 
-    len = xstr_word_len(http_view.uri, NULL);
+    len = xstrwdlen(http_view.uri, NULL);
     if (len == 0)
         return -1;  // Error
     self->uri = xstrndup(http_view.uri, len);
 
-    len = xstr_word_len(http_view.version, NULL);
+    len = xstrwdlen(http_view.version, NULL);
     if (len == 0)
         return -1;  // Error
     self->version = xstrndup(http_view.version, len);
@@ -306,12 +306,12 @@ int http_msg_parse_response(struct http_msg *self, char *buffer)
 
     size_t len;
 
-    len = xstr_word_len(http_view.version, NULL);
+    len = xstrwdlen(http_view.version, NULL);
     if (len == 0)
         return -1;  // Error
     self->version = xstrndup(http_view.version, len);
 
-    len = xstr_word_len(http_view.status, NULL);
+    len = xstrwdlen(http_view.status, NULL);
     if (len == 0)
         return -1;  // Error
     char status_str[len+1];
@@ -322,7 +322,7 @@ int http_msg_parse_response(struct http_msg *self, char *buffer)
         return -1;  // Error
     self->status = status_code;
 
-    len = xstr_word_len(http_view.reason, NULL);
+    len = xstrwdlen(http_view.reason, NULL);
     if (len == 0)
         return -1;  // Error
     self->reason = xstrndup(http_view.reason, len);

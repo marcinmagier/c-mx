@@ -161,7 +161,7 @@ char* xstrjoinex(char *buffer, const char *first, const char *second, const char
  */
 char* xstrltrim(const char *str)
 {
-    while (*str && !isgraph(*str))
+    while (*str && !isgraph((unsigned char)*str))
         str++;
 
     return (char*)str;
@@ -175,7 +175,7 @@ char* xstrltrim(const char *str)
 char* xstrrtrim(char *str)
 {
     for (size_t i=strlen(str)-1; i>0; i--) {
-        if (isgraph(str[i]))
+        if (isgraph((unsigned char)str[i]))
             break;
         str[i] = '\0';
     }
@@ -294,7 +294,7 @@ const char* xstrtok_next(struct xstrtok *tkzr, const char *separators)
  * Return string word length
  *
  */
-size_t xstr_word_len(const char *str, const char *space_chars)
+size_t xstrwdlen(const char *str, const char *space_chars)
 {
     size_t idx = 0;
     char ch;
@@ -302,7 +302,7 @@ size_t xstr_word_len(const char *str, const char *space_chars)
     while (ch = str[idx], ch) {
         if (space_chars == NULL) {
             // End with any whitespace character
-            if (!isgraph(ch))
+            if (!isgraph((unsigned char)ch))
                 return idx;
         }
         else {
@@ -322,7 +322,7 @@ size_t xstr_word_len(const char *str, const char *space_chars)
  * Return string space length
  *
  */
-size_t xstr_space_len(const char *str, const char *space_chars)
+size_t xstrsplen(const char *str, const char *space_chars)
 {
     size_t idx = 0;
     char ch;
@@ -330,7 +330,7 @@ size_t xstr_space_len(const char *str, const char *space_chars)
     while (ch = str[idx], ch) {
         if (space_chars == NULL) {
             // End with any non whitespace character
-            if (isgraph(ch))
+            if (isgraph((unsigned char)ch))
                 return idx;
         }
         else {
