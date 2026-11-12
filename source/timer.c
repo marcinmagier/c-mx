@@ -7,7 +7,7 @@
 
 static volatile time_t clock_ms = 0;
 static volatile time_t clock_s = 0;
-static volatile time_t clock_chrono = 0;
+static volatile time_t clock_rtc = 0;
 
 
 
@@ -21,14 +21,14 @@ static volatile time_t clock_chrono = 0;
  *  After wrapping clock_s is delayed by 295ms. For high accuraccy use uint64_t type.
  *
  */
-void clock_update(time_t ms, time_t chrono)
+void clock_update(time_t ms, time_t rtc)
 {
     if (ms) {
         clock_s += ((clock_ms % 1000) + ms)/1000;
         clock_ms += ms;
     }
 
-    clock_chrono = chrono;
+    clock_rtc = rtc;
 }
 
 
@@ -44,7 +44,7 @@ void clock_update_sys(void)
     clock_ms = ts.tv_sec * 1000;
     clock_ms += ts.tv_nsec / 1000 / 1000;
 
-    clock_chrono = time(NULL);
+    clock_rtc = time(NULL);
 }
 
 
@@ -69,10 +69,10 @@ time_t clock_get_seconds()
 
 
 /**
- * Chrono getter
+ * Real time clock getter
  *
  */
-time_t clock_get_chrono()
+time_t clock_get_rtc()
 {
-    return clock_chrono != 0 ? clock_chrono : clock_s;
+    return clock_rtc != 0 ? clock_rtc : clock_s;
 }

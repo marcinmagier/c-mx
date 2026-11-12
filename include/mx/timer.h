@@ -10,18 +10,18 @@
 
 
 
-void clock_update(time_t ms, time_t chrono);
+void clock_update(time_t ms, time_t rtc);
 void clock_update_sys(void);
 
 time_t clock_get_milis();
 time_t clock_get_seconds();
-time_t clock_get_chrono();
+time_t clock_get_rtc();
 
 
 
 #define TIMER_MS        0                   // Timer milliseconds
 #define TIMER_SEC       (0x1 << 0)          // Timer seconds
-#define TIMER_CHRONO    (0x1 << 1)          // Timer seconds respecting hibernation
+#define TIMER_RTC       (0x1 << 1)          // Timer seconds respecting hibernation
 
 #define TIMER_UPDATE    (0x1 << 7)          // Timer automatic update on check
 
@@ -45,8 +45,8 @@ static inline time_t timer_tstamp(uint8_t flags)
 
     if (flags & TIMER_SEC)
         return clock_get_seconds();
-    if (flags & TIMER_CHRONO)
-        return clock_get_chrono();
+    if (flags & TIMER_RTC)
+        return clock_get_rtc();
     return clock_get_milis();
 }
 

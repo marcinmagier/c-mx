@@ -11,7 +11,7 @@
 
 static void test_timer_ms(void);
 static void test_timer_sec(void);
-static void test_timer_chrono(void);
+static void test_timer_rtc(void);
 static void test_timer_auto_update(void);
 
 
@@ -27,7 +27,7 @@ CU_ErrorCode cu_test_timer()
 
     CU_add_test(suite, "Test timer ms",                             test_timer_ms);
     CU_add_test(suite, "Test timer sec",                            test_timer_sec);
-    CU_add_test(suite, "Test timer chrono",                         test_timer_chrono);
+    CU_add_test(suite, "Test timer rtc",                            test_timer_rtc);
     CU_add_test(suite, "Test timer auto update",                    test_timer_auto_update);
 
     return CU_get_error();
@@ -129,10 +129,10 @@ void test_timer_sec(void)
 
 
 /**
- *  Test timer chrono
+ *  Test timer rtc
  *
  */
-void test_timer_chrono(void)
+void test_timer_rtc(void)
 {
     unsigned int time = 100*1000;
     clock_update(time, 1000);
@@ -142,7 +142,7 @@ void test_timer_chrono(void)
     struct timer timer;
 
     // Timer start
-    timer_start(&timer, TIMER_CHRONO, 100);
+    timer_start(&timer, TIMER_RTC, 100);
     status = timer_running(&timer);
     CU_ASSERT_TRUE(status);
     status = timer_expired(&timer);
