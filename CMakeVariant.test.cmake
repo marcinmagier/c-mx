@@ -52,9 +52,9 @@ set_target_properties(${PRJ_APP_NAME} PROPERTIES
 )
 target_include_directories(${PRJ_APP_NAME} PRIVATE ${PRJ_APP_INCLUDES})
 
-# private defines
-set_private_defines(${PRJ_LIB_NAME})
-set_private_defines(${PRJ_APP_NAME})
+# private cflags
+set_private_cflags(${PRJ_LIB_NAME})
+set_private_cflags(${PRJ_APP_NAME})
 
 # link libraries
 target_link_libraries(${PRJ_APP_NAME} ${EXT_LIB_JSON_PATH})

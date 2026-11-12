@@ -9,6 +9,7 @@ MAKEFLAGS += -s
 MAKEFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CURR_DIR := $(notdir $(patsubst %/,%,$(dir $(MAKEFILE_PATH))))
 ROOT_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
+JOBS := $(NUMBER_OF_PROCESSORS)
 
 
 PROJECT   ?= cmx
@@ -23,6 +24,14 @@ SANOUT_DIR   ?= /tmp/$(PROJECT)/$(TARGET)
 
 BUILD_T_DIR  := $(ROOT_DIR)/build_$(TARGET)
 
+
+ifeq ($(OS),Windows_NT)
+	CMAKE_GENERATOR = "Ninja"
+	KCONFIG_MENUCONFIG ?= menuconfig
+else
+	CMAKE_GENERATOR = "Unix Makefiles"
+	KCONFIG_MENUCONFIG ?= kconfig-mconf
+endif
 
 CMAKE_TARGET_OPTIONS =
 CMAKE_CFLAGS_OPTIONS =
@@ -59,21 +68,21 @@ sanitize: build_sanitize
 coverage: build_coverage
 analyze:  build_analyze
 
-zrcnf: build_zrcnf
 
 
 
 
 install_%: build_%
 	$(eval VARIANT := $(subst install_,,$@))
-	cd build_$(TARGET)/$(VARIANT)
-	make install
+	$(eval BUILD_DIR := build_$(TARGET)/$(VARIANT))
+
+	cmake --install $(BUILD_DIR)
 
 
 
 build_%: cmake_%
 	$(eval VARIANT := $(subst build_,,$@))
-	cd build_$(TARGET)/$(VARIANT)
+	$(eval BUILD_DIR := build_$(TARGET)/$(VARIANT))
 
 ifeq ($(ANALYZE),1)
 	export CCC_CC=clang
@@ -81,14 +90,14 @@ ifeq ($(ANALYZE),1)
 
 	scan-build -analyze-headers -o $(BUILD_T_DIR)/report_analyze make
 else
-	make
+	cmake --build $(BUILD_DIR) --parallel $(JOBS)
 endif
 
 
 
 cmake_%: dir_%
 	$(eval VARIANT := $(subst cmake_,,$@))
-	cd build_$(TARGET)/$(VARIANT)
+	$(eval BUILD_DIR := build_$(TARGET)/$(VARIANT))
 
 	$(eval VARIANT := $(if $(findstring test_unit,$(VARIANT)),test,$(VARIANT)))
 
@@ -109,22 +118,24 @@ ifeq ($(SANITIZE),1)
 endif
 
 	cmake \
+		-G $(CMAKE_GENERATOR) \
+		-S . -B $(BUILD_DIR) \
 		-DCMAKE_PROJECT_NAME=$(PROJECT) \
 		-DCMAKE_BUILD_TARGET=$(TARGET) \
 		-DCMAKE_BUILD_VARIANT=$(VARIANT) \
 		-DCMAKE_FIND_ROOT_PATH="$(EXTLIB_DIR)" \
 		-DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}" \
-		$(CMAKE_TARGET_OPTIONS) \
-		../..
+		$(CMAKE_TARGET_OPTIONS)
 
 
 
 dir_%:
 	$(eval VARIANT := $(subst dir_,,$@))
+	$(eval BUILD_DIR := build_$(TARGET)/$(VARIANT))
 	echo ""
 	echo "    Build $(TARGET) $(VARIANT)"
 	echo ""
-	mkdir -p build_$(TARGET)/$(VARIANT)
+	mkdir -p $(BUILD_DIR)
 
 
 

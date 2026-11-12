@@ -63,12 +63,14 @@ set_target_properties(${PRJ_LIB_NAME}_shared PROPERTIES
     CLEAN_DIRECT_OUTPUT     1
 )
 set_target_properties(${PRJ_LIB_NAME}_shared PROPERTIES
-    VERSION                 ${PRJ_LIB_VER_MAJOR}.${PRJ_LIB_VER_MINOR}.${PRJ_LIB_VER_PATCH}
-    SOVERSION               ${PRJ_LIB_VER_MAJOR}
+    VERSION                 "${PRJ_LIB_VER_MAJOR}.${PRJ_LIB_VER_MINOR}.${PRJ_LIB_VER_PATCH}"
+    SOVERSION               "${PRJ_LIB_VER_MAJOR}"
 )
 
 # private defines
-set_private_defines(${PRJ_LIB_NAME})
+set_private_cflags(${PRJ_LIB_NAME})
+# filename defines
+define_filename_for_sources(${PRJ_LIB_NAME}_objs)
 
 # link libraries
 
