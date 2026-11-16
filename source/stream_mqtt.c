@@ -816,6 +816,10 @@ int stream_mqtt_do_time(struct stream_mqtt *self)
         if (item) {
             if (++self->resend_attempts < MQTT_RESEND_ATTEMPTS) {
                 WARN("Stream MQTT %d fd, resend %s message", stream_mqtt_get_fd(self), mqtt_packet_name(item->type));
+                if (item->type == MQTT_PUBLISH && MQTT_QOS_FROM_FLAGS(item->flags) > MQTT_QOS_0) {
+                    item->flags |= MQTT_DUP_FLAG;
+                    item->buffer.data[MQTT_TYPE_FLAGS_IDX] |= MQTT_DUP_FLAG;
+                }
                 stream_mqtt_real_write(self, item->buffer.data, item->buffer.length);
                 timer_start(&self->resend_timer, TIMER_SEC, MQTT_RESEND_TIMEOUT);
             }
@@ -828,12 +832,23 @@ int stream_mqtt_do_time(struct stream_mqtt *self)
             }
         }
     }
-    if (!timer_running(&self->resend_timer)) {
+    while (!timer_running(&self->resend_timer)) {
         struct mqtt_frame_item *item = TAILQ_FIRST(&self->outgoing);
-        if (item) {
-            stream_mqtt_real_write(self, item->buffer.data, item->buffer.length);
-            timer_start(&self->resend_timer, TIMER_SEC, MQTT_RESEND_TIMEOUT);
+        if (!item)
+            break;
+
+        ssize_t ret = stream_mqtt_real_write(self, item->buffer.data, item->buffer.length);
+        if (ret < 0)
+            return ret;
+
+        if (item->type == MQTT_PUBLISH && MQTT_QOS_FROM_FLAGS(item->flags) == MQTT_QOS_0) {
+            TAILQ_REMOVE(&self->outgoing, item, _entry_);
+            mqtt_frame_item_delete(item);
+            continue;
         }
+
+        self->resend_attempts = 0;
+        timer_start(&self->resend_timer, TIMER_SEC, MQTT_RESEND_TIMEOUT);
     }
 
     return stream_do_time(&self->stream);

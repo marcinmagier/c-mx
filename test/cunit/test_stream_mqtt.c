@@ -48,6 +48,8 @@ static void test_stream_mqtt_ping(void);
 
 static void test_stream_mqtt_resend_subscribe_unsubscribe(void);
 static void test_stream_mqtt_resend_publish_pubrel(void);
+static void test_stream_mqtt_resend_publish_flags(void);
+static void test_stream_mqtt_queued_publish_qos_0(void);
 
 
 
@@ -75,6 +77,8 @@ CU_ErrorCode cu_test_stream_mqtt()
 
     CU_add_test(suite, "Test stream mqtt resend sub/unsub",         test_stream_mqtt_resend_subscribe_unsubscribe);
     CU_add_test(suite, "Test stream mqtt resend publish/pubrel",    test_stream_mqtt_resend_publish_pubrel);
+    CU_add_test(suite, "Test stream mqtt resend publish flags",     test_stream_mqtt_resend_publish_flags);
+    CU_add_test(suite, "Test stream mqtt queued publish qos 0",     test_stream_mqtt_queued_publish_qos_0);
 
     return CU_get_error();
 }
@@ -603,6 +607,7 @@ void test_stream_mqtt_resend_subscribe_unsubscribe(void)
     stream_mqtt_peek_frame(server);
     bytes = stream_mqtt_read_frame(server, &type, &flags, buffer, sizeof(buffer));
     CU_ASSERT_EQUAL(type, MQTT_SUBSCRIBE);
+    CU_ASSERT_EQUAL(flags, MQTT_QOS_TO_FLAGS(MQTT_QOS_1));
     mqtt_parse_subscribe(&subscribe_msg, buffer, bytes);
     CU_ASSERT_EQUAL(subscribe_msg.id, TEST_MSG_ID_1);
     CU_ASSERT_EQUAL(subscribe_msg.qos, MQTT_QOS_1);
@@ -618,6 +623,7 @@ void test_stream_mqtt_resend_subscribe_unsubscribe(void)
         bytes = stream_mqtt_read_frame(server, &type, &flags, buffer, sizeof(buffer));
         CU_ASSERT_TRUE(bytes > 0);
         CU_ASSERT_EQUAL(type, MQTT_SUBSCRIBE);
+        CU_ASSERT_EQUAL(flags, MQTT_QOS_TO_FLAGS(MQTT_QOS_1));
         mqtt_parse_subscribe(&subscribe_msg, buffer, bytes);
         CU_ASSERT_EQUAL(subscribe_msg.id, TEST_MSG_ID_1);
         CU_ASSERT_EQUAL(subscribe_msg.qos, MQTT_QOS_1);
@@ -633,6 +639,7 @@ void test_stream_mqtt_resend_subscribe_unsubscribe(void)
     bytes = stream_mqtt_read_frame(server, &type, &flags, buffer, sizeof(buffer));
     CU_ASSERT_TRUE(bytes > 0);
     CU_ASSERT_EQUAL(type, MQTT_UNSUBSCRIBE);
+    CU_ASSERT_EQUAL(flags, MQTT_QOS_TO_FLAGS(MQTT_QOS_1));
     mqtt_parse_unsubscribe(&unsubscribe_msg, buffer, bytes);
     CU_ASSERT_EQUAL(unsubscribe_msg.id, TEST_MSG_ID_1);
     CU_ASSERT_NSTRING_EQUAL(unsubscribe_msg.topic, TEST_TOPIC_1, strlen(TEST_TOPIC_1));
@@ -647,6 +654,7 @@ void test_stream_mqtt_resend_subscribe_unsubscribe(void)
         bytes = stream_mqtt_read_frame(server, &type, &flags, buffer, sizeof(buffer));
         CU_ASSERT_TRUE(bytes > 0);
         CU_ASSERT_EQUAL(type, MQTT_UNSUBSCRIBE);
+        CU_ASSERT_EQUAL(flags, MQTT_QOS_TO_FLAGS(MQTT_QOS_1));
         mqtt_parse_unsubscribe(&unsubscribe_msg, buffer, bytes);
         CU_ASSERT_EQUAL(unsubscribe_msg.id, TEST_MSG_ID_1);
         CU_ASSERT_NSTRING_EQUAL(unsubscribe_msg.topic, TEST_TOPIC_1, strlen(TEST_TOPIC_1));
@@ -661,6 +669,7 @@ void test_stream_mqtt_resend_subscribe_unsubscribe(void)
     bytes = stream_mqtt_read_frame(server, &type, &flags, buffer, sizeof(buffer));
     CU_ASSERT_TRUE(bytes > 0);
     CU_ASSERT_EQUAL(type, MQTT_SUBSCRIBE);
+    CU_ASSERT_EQUAL(flags, MQTT_QOS_TO_FLAGS(MQTT_QOS_1));
     mqtt_parse_subscribe(&subscribe_msg, buffer, bytes);
     CU_ASSERT_EQUAL(subscribe_msg.id, TEST_MSG_ID_2);
     CU_ASSERT_EQUAL(subscribe_msg.qos, MQTT_QOS_2);
@@ -728,6 +737,115 @@ void test_stream_mqtt_resend_publish_pubrel(void)
     CU_ASSERT_EQUAL(publish_msg.id, TEST_MSG_ID_2);
     CU_ASSERT_NSTRING_EQUAL(publish_msg.topic, TEST_TOPIC_2, strlen(TEST_TOPIC_2));
     CU_ASSERT_NSTRING_EQUAL(publish_msg.payload, TEST_PAYLOAD_2, strlen(TEST_PAYLOAD_2));
+
+    test_stream_mqtt_clean(client, server);
+}
+
+
+void test_stream_mqtt_resend_publish_flags(void)
+{
+    for (unsigned char qos = MQTT_QOS_1; qos <= MQTT_QOS_2; ++qos) {
+        struct stream_mqtt *client, *server;
+        test_stream_mqtt_init(&client, &server);
+        stream_mqtt_publish(client, true, false, qos, TEST_MSG_ID_1, TEST_TOPIC_1,
+                            (const unsigned char *)TEST_PAYLOAD_1, strlen(TEST_PAYLOAD_1));
+
+        for (int phase = 0; phase < (qos == MQTT_QOS_2 ? 2 : 1); ++phase) {
+            unsigned char expected[512];
+            unsigned char received[512];
+            ssize_t length = read(stream_mqtt_get_fd(server), expected, sizeof(expected));
+            CU_ASSERT_TRUE(length > MQTT_MIN_FIXED_HEADER_SIZE);
+            if (length <= MQTT_MIN_FIXED_HEADER_SIZE)
+                break;
+
+            unsigned char flags = phase == 0 ?
+                (MQTT_PUBLISH << 4) | MQTT_QOS_TO_FLAGS(qos) | MQTT_RETAIN_FLAG :
+                (MQTT_PUBREL << 4) | MQTT_QOS_TO_FLAGS(MQTT_QOS_1);
+            CU_ASSERT_EQUAL(expected[MQTT_TYPE_FLAGS_IDX], flags);
+            if (phase == 0)
+                expected[MQTT_TYPE_FLAGS_IDX] |= MQTT_DUP_FLAG;
+
+            for (int retry = 0; retry < 2; ++retry) {
+                clock_update(31 * 1000, 0);
+                stream_time(stream_mqtt_to_stream(client));
+                ssize_t bytes = read(stream_mqtt_get_fd(server), received, sizeof(received));
+                CU_ASSERT_EQUAL(bytes, length);
+                if (bytes == length)
+                    CU_ASSERT_EQUAL(memcmp(received, expected, length), 0);
+            }
+
+            if (phase == 0 && qos == MQTT_QOS_2) {
+                stream_mqtt_pubrec(server, TEST_MSG_ID_1);
+                stream_mqtt_peek_frame(client);
+            }
+        }
+
+        test_stream_mqtt_clean(client, server);
+    }
+}
+
+
+void test_stream_mqtt_queued_publish_qos_0(void)
+{
+    struct stream_mqtt *client, *server;
+    test_stream_mqtt_init(&client, &server);
+
+    stream_mqtt_publish(client, false, false, MQTT_QOS_1, TEST_MSG_ID_1, TEST_TOPIC_1,
+                        (const unsigned char *)TEST_PAYLOAD_1, strlen(TEST_PAYLOAD_1));
+    for (int i = 0; i < 2; ++i) {
+        stream_mqtt_publish(client, false, false, MQTT_QOS_0, 0, TEST_TOPIC_2,
+                            (const unsigned char *)TEST_PAYLOAD_2, strlen(TEST_PAYLOAD_2));
+    }
+    stream_mqtt_publish(client, false, false, MQTT_QOS_1, TEST_MSG_ID_3, TEST_TOPIC_3,
+                        (const unsigned char *)TEST_PAYLOAD_3, strlen(TEST_PAYLOAD_3));
+
+    unsigned char buffer[512];
+    unsigned char type, flags;
+    stream_mqtt_peek_frame(server);
+    ssize_t bytes = stream_mqtt_read_frame(server, &type, &flags, buffer, sizeof(buffer));
+    CU_ASSERT_TRUE(bytes > 0);
+    stream_mqtt_peek_frame(client);
+    stream_time(stream_mqtt_to_stream(client));
+
+    for (int i = 0; i < 3; ++i) {
+        stream_mqtt_peek_frame(server);
+        bytes = stream_mqtt_read_frame(server, &type, &flags, buffer, sizeof(buffer));
+        CU_ASSERT_TRUE(bytes > 0);
+        if (bytes <= 0)
+            continue;
+
+        CU_ASSERT_EQUAL(type, MQTT_PUBLISH);
+        CU_ASSERT_EQUAL(flags, MQTT_QOS_TO_FLAGS(i == 2 ? MQTT_QOS_1 : MQTT_QOS_0));
+        struct mqtt_publish msg = {0};
+        CU_ASSERT_EQUAL(mqtt_parse_publish(&msg, buffer, bytes, MQTT_QOS_FROM_FLAGS(flags)), bytes);
+        const char *topic = i == 2 ? TEST_TOPIC_3 : TEST_TOPIC_2;
+        const char *payload = i == 2 ? TEST_PAYLOAD_3 : TEST_PAYLOAD_2;
+        CU_ASSERT_EQUAL(msg.topic_len, strlen(topic));
+        CU_ASSERT_NSTRING_EQUAL(msg.topic, topic, msg.topic_len);
+        CU_ASSERT_EQUAL(msg.payload_len, strlen(payload));
+        CU_ASSERT_EQUAL(memcmp(msg.payload, payload, msg.payload_len), 0);
+        if (i == 2)
+            CU_ASSERT_EQUAL(msg.id, TEST_MSG_ID_3);
+    }
+
+    clock_update(31 * 1000, 0);
+    stream_time(stream_mqtt_to_stream(client));
+    stream_mqtt_peek_frame(server);
+    bytes = stream_mqtt_read_frame(server, &type, &flags, buffer, sizeof(buffer));
+    CU_ASSERT_TRUE(bytes > 0);
+    if (bytes > 0) {
+        CU_ASSERT_EQUAL(type, MQTT_PUBLISH);
+        CU_ASSERT_EQUAL(flags, MQTT_QOS_TO_FLAGS(MQTT_QOS_1) | MQTT_DUP_FLAG);
+        struct mqtt_publish msg = {0};
+        mqtt_parse_publish(&msg, buffer, bytes, MQTT_QOS_FROM_FLAGS(flags));
+        CU_ASSERT_EQUAL(msg.id, TEST_MSG_ID_3);
+    }
+
+    stream_mqtt_peek_frame(client);
+    stream_time(stream_mqtt_to_stream(client));
+    clock_update(31 * 1000, 0);
+    stream_time(stream_mqtt_to_stream(client));
+    CU_ASSERT_EQUAL(stream_mqtt_peek_frame(server), -1);
 
     test_stream_mqtt_clean(client, server);
 }

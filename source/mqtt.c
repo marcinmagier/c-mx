@@ -439,7 +439,8 @@ size_t mqtt_format_publish(unsigned char *buffer, unsigned char qos, unsigned sh
         offset += mqtt_put_short(buffer+offset, id);
 
     // --- Payload ---
-    offset += mqtt_put_data(buffer+offset, payload, payload_len);
+    if (payload_len > 0)
+        offset += mqtt_put_data(buffer+offset, payload, payload_len);
 
     return offset;
 }
