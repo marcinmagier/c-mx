@@ -41,7 +41,8 @@ int socket_open(int family, int type)
  */
 int socket_close(int sock)
 {
-    close(sock);
+    if (sock != SOCKET_INVALID)
+        close(sock);
 
     return SOCKET_INVALID;
 }
