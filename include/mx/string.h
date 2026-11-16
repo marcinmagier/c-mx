@@ -17,6 +17,7 @@ size_t xstrlcpy(char *dst, const char *src, size_t size);
 char* xstrdup(const char *str);
 char* xstrdupex(char *buffer, const char *str);
 char* xstrndup(const char *str, size_t len);
+char* xstrndupex(char *buffer, const char *str, size_t len);
 
 bool xstrtol(const char *str, long *val, int base);
 

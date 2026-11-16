@@ -88,14 +88,28 @@ char* xstrdupex(char *buffer, const char *str)
 }
 
 
+/**
+ *
+ */
+char* xstrndupex(char *buffer, const char *str, size_t len)
+{
+    char *p = memchr(str, '\0', len);
+    size_t copy_len = p ? (size_t)(p-str) : len;
+
+    buffer = xrealloc(buffer, copy_len+1);
+    if (copy_len)
+        memcpy(buffer, str, copy_len);
+    buffer[copy_len] = '\0';
+    return buffer;
+}
+
 
 /**
  *
  */
 char* xstrndup(const char *str, size_t len)
 {
-    char *p = memchr(str, '\0', len);
-    return xmemdupz(str, p ? (size_t)(p-str) : len);
+    return xstrndupex(NULL, str, len);
 }
 
 

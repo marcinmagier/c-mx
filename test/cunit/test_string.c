@@ -113,6 +113,20 @@ void test_string_duplicate(void)
     CU_ASSERT_PTR_NOT_NULL(tmp);
     CU_ASSERT_STRING_EQUAL(tmp, hello);
     xfree(tmp);
+
+    tmp = xstrndupex(NULL, helloworld, hello_len);
+    CU_ASSERT_PTR_NOT_NULL(tmp);
+    CU_ASSERT_STRING_EQUAL(tmp, hello);
+
+    tmp = xstrndupex(tmp, world, world_len);
+    CU_ASSERT_STRING_EQUAL(tmp, world);
+
+    tmp = xstrndupex(tmp, helloworld, 0);
+    CU_ASSERT_STRING_EQUAL(tmp, "");
+
+    tmp = xstrndupex(tmp, helloworld, helloworld_len);
+    CU_ASSERT_STRING_EQUAL(tmp, helloworld);
+    xfree(tmp);
 }
 
 
