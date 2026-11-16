@@ -1,5 +1,6 @@
 
 #include "mx/url.h"
+#include "mx/misc.h"
 
 #include <string.h>
 #include <stdbool.h>
@@ -18,8 +19,7 @@ const struct url_scheme schemes[] = {
         { "mqtt",   1883,   false},
         { "wss",    443,    true},
         { "ws",     80,     false},
-
-        { NULL,     0,      false},     // End
+        { "file",   0,      false},
 };
 
 
@@ -30,12 +30,10 @@ const struct url_scheme schemes[] = {
  */
 bool url_parse_scheme(const char *scheme, unsigned int *port, bool *encrypted)
 {
-    for (unsigned int i=0; ;i++) {
+    for (unsigned int i=0; i<ARRAY_SIZE(schemes) ;i++) {
         const struct url_scheme *s = &schemes[i];
-        if (s->name == NULL)
-            break;
 
-        if (!strncmp(scheme, s->name, strlen(s->name))) {
+        if (!strcmp(scheme, s->name)) {
             if (port)
                 *port = s->port;
             if (encrypted)
