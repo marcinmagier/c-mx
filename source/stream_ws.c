@@ -519,10 +519,10 @@ ssize_t stream_ws_write_frame(struct stream_ws *self, unsigned char fin, unsigne
 ssize_t stream_ws_do_read(struct stream_ws *self, void *buffer, size_t length)
 {
     ssize_t ret = stream_ws_peek_frame(self);
-    if (ret <= 0) {
-        if (errno != EAGAIN && errno != EWOULDBLOCK)
-            return ret;     // Error
-    }
+    if (ret == 0)
+        return ret;
+    if ((ret < 0) && (errno != EAGAIN) && (errno != EWOULDBLOCK))
+        return ret;     // Error
 
     if (TAILQ_EMPTY(&self->cache)) {
         errno = EAGAIN;

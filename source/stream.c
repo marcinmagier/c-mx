@@ -278,8 +278,11 @@ int stream_handle_outgoing_data(struct stream *self)
 {
     int written = 0;
 
-    if (self->decorated)
+    if (self->decorated) {
         written = stream_handle_outgoing_data(self->decorated);
+        if (written < 0)
+            return written;
+    }
 
     while (!TAILQ_EMPTY(&self->outgoing)) {
         struct buffer_slice *slice = TAILQ_FIRST(&self->outgoing);
