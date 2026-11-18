@@ -646,6 +646,25 @@ ssize_t stream_mqtt_connack(struct stream_mqtt *self, bool session_present, unsi
 }
 
 
+static ssize_t stream_mqtt_submit(struct stream_mqtt *self, unsigned char type, unsigned char flags,
+                                  unsigned short id, const unsigned char *frame, size_t length)
+{
+    if (!TAILQ_EMPTY(&self->outgoing)) {
+        stream_mqtt_append_frame(&self->outgoing, type, flags, id, frame, length);
+        return length;
+    }
+
+    ssize_t written = stream_mqtt_real_write(self, frame, length);
+    bool awaiting_ack = mqtt_response_type(type, MQTT_QOS_FROM_FLAGS(flags)) != MQTT_FORBIDDEN;
+    if (written > 0 && awaiting_ack) {
+        stream_mqtt_append_frame(&self->outgoing, type, flags, id, frame, length);
+        timer_start(&self->resend_timer, TIMER_SEC, MQTT_RESEND_TIMEOUT);
+        self->resend_attempts = 0;
+    }
+    return written;
+}
+
+
 /**
  * Send MQTT Publish message
  *
@@ -667,19 +686,7 @@ ssize_t stream_mqtt_publish(struct stream_mqtt *self, bool retain, bool dup, uns
     offset += mqtt_format_fixed_header(buffer, MQTT_PUBLISH, flags, body_len);
     offset += mqtt_format_publish(buffer+offset, qos, id, topic, payload, payload_len);
 
-    ssize_t ret = 1;
-    bool msg_sent = TAILQ_EMPTY(&self->outgoing);
-    if (msg_sent) {
-        ret = stream_mqtt_real_write(self, buffer, offset);
-        if (qos > MQTT_QOS_0) {
-            timer_start(&self->resend_timer, TIMER_SEC, MQTT_RESEND_TIMEOUT);
-            self->resend_attempts = 0;
-        }
-    }
-    if (!msg_sent || (qos > MQTT_QOS_0)) {
-        stream_mqtt_append_frame(&self->outgoing, MQTT_PUBLISH, flags, id, buffer, offset);
-    }
-
+    ssize_t ret = stream_mqtt_submit(self, MQTT_PUBLISH, flags, id, buffer, offset);
     xfree(buffer);
     return ret;
 }
@@ -719,14 +726,7 @@ ssize_t stream_mqtt_subscribe(struct stream_mqtt *self, unsigned short id, const
     offset += mqtt_format_fixed_header(buffer, MQTT_SUBSCRIBE, flags, body_len);
     offset += mqtt_format_subscribe(buffer+offset, id, topic, qos);
 
-    ssize_t ret = 1;
-    if (TAILQ_EMPTY(&self->outgoing)) {
-        ret = stream_mqtt_real_write(self, buffer, offset);
-        timer_start(&self->resend_timer, TIMER_SEC, MQTT_RESEND_TIMEOUT);
-        self->resend_attempts = 0;
-    }
-    stream_mqtt_append_frame(&self->outgoing, MQTT_SUBSCRIBE, flags, id, buffer, offset);
-
+    ssize_t ret = stream_mqtt_submit(self, MQTT_SUBSCRIBE, flags, id, buffer, offset);
     xfree(buffer);
     return ret;
 }
@@ -761,14 +761,7 @@ ssize_t stream_mqtt_unsubscribe(struct stream_mqtt *self, unsigned short id, con
     offset += mqtt_format_fixed_header(buffer, MQTT_UNSUBSCRIBE, flags, body_len);
     offset += mqtt_format_unsubscribe(buffer+offset, id, topic);
 
-    ssize_t ret = 1;
-    if (TAILQ_EMPTY(&self->outgoing)) {
-        ret = stream_mqtt_real_write(self, buffer, offset);
-        timer_start(&self->resend_timer, TIMER_SEC, MQTT_RESEND_TIMEOUT);
-        self->resend_attempts = 0;
-    }
-    stream_mqtt_append_frame(&self->outgoing, MQTT_UNSUBSCRIBE, flags, id, buffer, offset);
-
+    ssize_t ret = stream_mqtt_submit(self, MQTT_UNSUBSCRIBE, flags, id, buffer, offset);
     xfree(buffer);
     return ret;
 }
@@ -820,11 +813,16 @@ int stream_mqtt_do_time(struct stream_mqtt *self)
                     item->flags |= MQTT_DUP_FLAG;
                     item->buffer.data[MQTT_TYPE_FLAGS_IDX] |= MQTT_DUP_FLAG;
                 }
-                stream_mqtt_real_write(self, item->buffer.data, item->buffer.length);
+                if (stream_mqtt_real_write(self, item->buffer.data, item->buffer.length) < 0)
+                    return -1;
                 timer_start(&self->resend_timer, TIMER_SEC, MQTT_RESEND_TIMEOUT);
             }
             else {
                 WARN("Stream MQTT %d fd, abandon %s message", stream_mqtt_get_fd(self), mqtt_packet_name(item->type));
+                if (self->client_role) {
+                    errno = ETIMEDOUT;
+                    return -1;
+                }
                 TAILQ_REMOVE(&self->outgoing, item, _entry_);
                 mqtt_frame_item_delete(item);
                 timer_stop(&self->resend_timer);

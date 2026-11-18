@@ -52,7 +52,7 @@ ssize_t stream_mqtt_write_frame_packet_id(struct stream_mqtt *self, unsigned cha
 
 ssize_t stream_mqtt_connect(struct stream_mqtt *self, bool clean_session, unsigned short keep_alive, const char *client_id,
                             const char *will_topic, unsigned char *will_msg, unsigned short will_msg_len, bool will_retain, unsigned char will_qos,
-                            const char *user_name, unsigned char *password, unsigned short password_len);
+                            const char *user_name, const unsigned char *password, unsigned short password_len);
 
 ssize_t stream_mqtt_connack(struct stream_mqtt *self, bool session_present, unsigned char return_code);
 

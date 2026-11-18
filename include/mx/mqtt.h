@@ -139,7 +139,7 @@ struct mqtt_connect
 
 ssize_t mqtt_parse_connect(struct mqtt_connect *payload, const unsigned char *buffer, size_t length);
 size_t mqtt_eval_connect(const char *client_id, const char *will_topic, unsigned short will_msg_len,
-                         const char *user_name, unsigned char *password, unsigned short password_len);
+                         const char *user_name, const unsigned char *password, unsigned short password_len);
 size_t mqtt_format_connect(unsigned char *buffer, bool clean_session, unsigned short keep_alive, const char *client_id,
                          const char *will_topic, unsigned char *will_msg, unsigned short will_msg_len, bool will_retain, unsigned char will_qos,
                          const char *user_name, const unsigned char *password, unsigned short password_len);
