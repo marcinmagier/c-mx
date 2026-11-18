@@ -186,7 +186,7 @@ struct mqtt_publish
     const char *topic;
     unsigned short topic_len;
     const unsigned char *payload;
-    unsigned short payload_len;
+    size_t payload_len;
 };
 
 
@@ -277,13 +277,13 @@ size_t mqtt_format_unsuback(unsigned char *buffer, unsigned short id);
 
 int mqtt_put_byte(unsigned char *buffer, unsigned char value);
 int mqtt_put_short(unsigned char *buffer, unsigned short value);
-int mqtt_put_data(unsigned char *buffer, const unsigned char *data, unsigned short data_len);
 int mqtt_put_string(unsigned char *buffer, const char *str);
+size_t mqtt_put_data(unsigned char *buffer, const unsigned char *data, size_t data_len);
 
 int mqtt_get_byte(const unsigned char *buffer, unsigned char *value);
 int mqtt_get_short(const unsigned char *buffer, unsigned short *value);
-int mqtt_get_data(const unsigned char *buffer, const unsigned char **data, unsigned short data_len);
 int mqtt_get_string(const unsigned char *buffer, const char **str, unsigned short *str_len);
+size_t mqtt_get_data(const unsigned char *buffer, const unsigned char **data, size_t data_len);
 
 
 

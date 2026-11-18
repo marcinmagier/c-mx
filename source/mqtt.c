@@ -259,12 +259,12 @@ size_t mqtt_eval_connect(const char *client_id, const char *will_topic, unsigned
                          const char *user_name, unsigned short password_len)
 {
     size_t body_size = MQTT_CONNECT_VARIABLE_HEADER_SIZE;
-    if (client_id)
-        body_size += MQTT_STR_LENGTH_SIZE + strlen(client_id);
-    if (will_topic)
+    // Client Identifier is mandatory
+    body_size += MQTT_STR_LENGTH_SIZE + (client_id ? strlen(client_id) : 0);
+    if (will_topic) {
         body_size += MQTT_STR_LENGTH_SIZE + strlen(will_topic);
-    if (will_msg_len > 0)
         body_size += MQTT_STR_LENGTH_SIZE + will_msg_len;
+    }
     if (user_name)
         body_size += MQTT_STR_LENGTH_SIZE + strlen(user_name);
     if (password_len > 0)
@@ -294,7 +294,7 @@ size_t mqtt_format_connect(unsigned char *buffer, bool clean_session, unsigned s
     unsigned char flags = 0;
     if (clean_session)
         flags |= MQTT_CONNECT_CLEAN_SESSION;
-    if (will_topic && will_msg) {
+    if (will_topic) {
         flags |= MQTT_CONNECT_WILL_FLAG;
         flags |= (will_qos << MQTT_CONNECT_WILL_QOS_POS) & MQTT_CONNECT_WILL_QOS_MSK;
         if (will_retain)
@@ -308,14 +308,14 @@ size_t mqtt_format_connect(unsigned char *buffer, bool clean_session, unsigned s
     offset += mqtt_put_short(buffer+offset, keep_alive);
 
     // --- Payload ---
-    // Client Identifier
-    offset += mqtt_put_string(buffer+offset, client_id);
+    // Client Identifier is mandatory
+    offset += mqtt_put_string(buffer+offset, client_id ? client_id : "");
     // Will Topic
-    if (will_topic)
+    if (will_topic) {
         offset += mqtt_put_string(buffer+offset, will_topic);
-    if (will_msg) {
         offset += mqtt_put_short(buffer+offset, will_msg_len);
-        offset += mqtt_put_data(buffer+offset, will_msg, will_msg_len);
+        if (will_msg_len)
+            offset += mqtt_put_data(buffer+offset, will_msg, will_msg_len);
     }
     // User Name
     if (user_name)
@@ -387,14 +387,25 @@ size_t mqtt_format_connack(unsigned char *buffer, bool session_present, unsigned
  */
 ssize_t mqtt_parse_publish(struct mqtt_publish *payload, const unsigned char *buffer, size_t length, unsigned char qos)
 {
+    if (length < MQTT_STR_LENGTH_SIZE || qos > MQTT_QOS_2)
+        return -1;
+
     size_t offset = 0;
 
     // --- Variable header ---
     // Topic Name
     offset += mqtt_get_string(buffer+offset, &payload->topic, &payload->topic_len);
+    if (!payload->topic_len || offset > length)
+        return -1;
     // Packet Identifier
-    if (qos > MQTT_QOS_0)
+    payload->id = 0;
+    if (qos > MQTT_QOS_0) {
+        if (length - offset < MQTT_PACKET_ID_SIZE)
+            return -1;
         offset += mqtt_get_short(buffer+offset, &payload->id);
+        if (payload->id == 0)
+            return -1;
+    }
 
     // --- Payload ---
     payload->payload_len = length-offset;
@@ -694,7 +705,7 @@ int mqtt_put_short(unsigned char *buffer, unsigned short value)
  * Put data into buffer
  *
  */
-int mqtt_put_data(unsigned char *buffer, const unsigned char *data, unsigned short data_len)
+size_t mqtt_put_data(unsigned char *buffer, const unsigned char *data, size_t data_len)
 {
     memcpy(buffer, data, data_len);
     return data_len;
@@ -740,7 +751,7 @@ int mqtt_get_short(const unsigned char *buffer, unsigned short *value)
 /**
  * Get data from buffer
  */
-int mqtt_get_data(const unsigned char *buffer, const unsigned char **data, unsigned short data_len)
+size_t mqtt_get_data(const unsigned char *buffer, const unsigned char **data, size_t data_len)
 {
     *data = buffer;
 
