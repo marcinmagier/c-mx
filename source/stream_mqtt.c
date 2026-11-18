@@ -609,12 +609,12 @@ ssize_t stream_mqtt_write_frame_packet_id(struct stream_mqtt *self, unsigned cha
  */
 ssize_t stream_mqtt_connect(struct stream_mqtt *self, bool clean_session, unsigned short keep_alive, const char *client_id,
                             const char *will_topic, unsigned char *will_msg, unsigned short will_msg_len, bool will_retain, unsigned char will_qos,
-                            const char *user_name, unsigned char *password, unsigned short password_len)
+                            const char *user_name, const unsigned char *password, unsigned short password_len)
 {
     self->client_role = true;
     self->keep_alive = keep_alive;
 
-    size_t body_len = mqtt_eval_connect(client_id, will_topic, will_msg_len, user_name, password_len);
+    size_t body_len = mqtt_eval_connect(client_id, will_topic, will_msg_len, user_name, password, password_len);
     unsigned char *buffer = xmalloc(body_len + MQTT_MAX_FIXED_HEADER_SIZE);
     size_t offset = 0;
 

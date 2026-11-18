@@ -256,7 +256,7 @@ ssize_t mqtt_parse_connect(struct mqtt_connect *payload, const unsigned char *bu
  *
  */
 size_t mqtt_eval_connect(const char *client_id, const char *will_topic, unsigned short will_msg_len,
-                         const char *user_name, unsigned short password_len)
+                         const char *user_name, unsigned char *password, unsigned short password_len)
 {
     size_t body_size = MQTT_CONNECT_VARIABLE_HEADER_SIZE;
     // Client Identifier is mandatory
@@ -267,7 +267,7 @@ size_t mqtt_eval_connect(const char *client_id, const char *will_topic, unsigned
     }
     if (user_name)
         body_size += MQTT_STR_LENGTH_SIZE + strlen(user_name);
-    if (password_len > 0)
+    if (password)
         body_size += MQTT_STR_LENGTH_SIZE + password_len;
 
     return body_size;
