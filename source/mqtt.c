@@ -130,6 +130,58 @@ int mqtt_parse_frame(struct mqtt_fixed_header *frame, const unsigned char *data,
 
 
 /**
+ * Perform basic frame validation
+ *
+ */
+bool mqtt_validate_frame(const struct mqtt_fixed_header *frame, const unsigned char *body, size_t body_len)
+{
+    unsigned char expected_flags = 0;
+    if (frame->type == MQTT_SUBSCRIBE || frame->type == MQTT_UNSUBSCRIBE || frame->type == MQTT_PUBREL)
+        expected_flags = MQTT_QOS_TO_FLAGS(MQTT_QOS_1);
+    if (frame->type != MQTT_PUBLISH && frame->flags != expected_flags)
+        return false;
+
+    switch (frame->type) {
+        case MQTT_CONNECT:
+        case MQTT_PUBLISH:
+            return true;  // Validated by application
+
+        case MQTT_CONNACK:
+            return body_len == MQTT_CONNACK_VARIABLE_HEADER_SIZE &&
+                    body[0] <= MQTT_CONNACK_SESSION_PRESENT_FLAG &&
+                    body[1] <= MQTT_CONNACK_REFUSED_NOT_AUTHORIZED;
+
+        case MQTT_SUBSCRIBE:
+            // Body have to contain topic string and requested qos. Packet id != 0
+            return body_len >= MQTT_PACKET_ID_SIZE + MQTT_STR_LENGTH_SIZE + 2 && (body[0] || body[1]);
+
+        case MQTT_UNSUBSCRIBE:
+            // Body have to contain topic string. Packet id != 0
+            return body_len >= MQTT_PACKET_ID_SIZE + MQTT_STR_LENGTH_SIZE + 1 && (body[0] || body[1]);
+
+        case MQTT_SUBACK:
+            // Packet id != 0
+            return (body_len == MQTT_SUBACK_VARIABLE_HEADER_SIZE + MQTT_SUBACK_PAYLOAD_SIZE) && (body[0] || body[1]);
+
+        case MQTT_UNSUBACK:
+        case MQTT_PUBACK:
+        case MQTT_PUBREC:
+        case MQTT_PUBREL:
+        case MQTT_PUBCOMP:
+            // Packet id != 0
+            return body_len == MQTT_PACKET_ID_SIZE && (body[0] || body[1]);
+
+        case MQTT_PINGREQ:
+        case MQTT_PINGRESP:
+        case MQTT_DISCONNECT:
+            return body_len == 0;
+    }
+
+    return false;
+}
+
+
+/**
  * Format MQTT frame
  *
  * Buffer should be MQTT_MAX_HEADER_SIZE longer than data length

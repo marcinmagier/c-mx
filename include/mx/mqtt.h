@@ -75,6 +75,7 @@ struct mqtt_fixed_header
 
 
 int mqtt_parse_frame(struct mqtt_fixed_header *header, const unsigned char *data, size_t length, size_t *frame_length);
+bool mqtt_validate_frame(const struct mqtt_fixed_header *frame, const unsigned char *body, size_t body_len);
 size_t mqtt_format_frame(unsigned char *buffer, unsigned char type, unsigned char flags,
                                                 const unsigned char *body_data, size_t body_length);
 

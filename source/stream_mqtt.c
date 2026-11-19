@@ -323,8 +323,26 @@ bool stream_mqtt_notify_observer(struct stream_mqtt *self, unsigned char type, u
  * Handle MQTT frame
  *
  */
-void stream_mqtt_handle_received_frame(struct stream_mqtt *self, struct mqtt_fixed_header *frame, const unsigned char *body)
+static int stream_mqtt_handle_received_frame(struct stream_mqtt *self, struct mqtt_fixed_header *frame, const unsigned char *body)
 {
+    if (self->client_role) {
+        if (stream_mqtt_get_status(self) == STREAM_ST_INIT && frame->type != MQTT_CONNACK) {
+            errno = EPROTO;
+            return -1;
+        }
+        if (frame->type == MQTT_CONNECT     || frame->type == MQTT_SUBSCRIBE ||
+            frame->type == MQTT_UNSUBSCRIBE || frame->type == MQTT_PINGREQ ||
+            frame->type == MQTT_DISCONNECT) {
+            errno = EPROTO;
+            return -1;
+        }
+    }
+
+    if (!mqtt_validate_frame(frame, body, frame->body_length)) {
+        errno = EPROTO;
+        return -1;
+    }
+
     switch (frame->type) {
         case MQTT_CONNECT: {
             struct mqtt_connect msg;
@@ -376,7 +394,10 @@ void stream_mqtt_handle_received_frame(struct stream_mqtt *self, struct mqtt_fix
         case MQTT_PUBLISH: {
             unsigned char qos = MQTT_QOS_FROM_FLAGS(frame->flags);
             struct mqtt_publish msg;
-            mqtt_parse_publish(&msg, body, frame->body_length, qos);
+            if (mqtt_parse_publish(&msg, body, frame->body_length, qos) < 0) {
+                errno = EPROTO;
+                return -1;
+            }
 
             if (qos == MQTT_QOS_2) {
                 stream_mqtt_remove_frame(&self->inbound, frame->type, msg.id);
@@ -404,7 +425,8 @@ void stream_mqtt_handle_received_frame(struct stream_mqtt *self, struct mqtt_fix
                 timer_stop(&self->resend_timer);
 
             if (frame->type == MQTT_PUBREC) {
-                stream_mqtt_pubrel(self, varhdr.id);
+                if (stream_mqtt_pubrel(self, varhdr.id) < 0)
+                    return -1;
                 timer_start(&self->resend_timer, TIMER_SEC, MQTT_RESEND_TIMEOUT);
                 self->resend_attempts = 0;
             }
@@ -479,6 +501,21 @@ void stream_mqtt_handle_received_frame(struct stream_mqtt *self, struct mqtt_fix
             }
         }   break;
     }
+    return 0;
+}
+
+
+bool stream_mqtt_is_frame_pending(struct stream_mqtt *self, unsigned char type, unsigned short id)
+{
+    if (!type && !id)
+        return !TAILQ_EMPTY(&self->outgoing);
+
+    struct mqtt_frame_item *item;
+    TAILQ_FOREACH(item, &self->outgoing, _entry_) {
+        if ((!type || item->type == type) && (!id || item->id == id))
+            return true;
+    }
+    return false;
 }
 
 
