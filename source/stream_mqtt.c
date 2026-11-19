@@ -341,8 +341,9 @@ void stream_mqtt_handle_received_frame(struct stream_mqtt *self, struct mqtt_fix
         case MQTT_CONNACK: {
             struct mqtt_connack msg;
             mqtt_parse_connack(&msg, body, frame->body_length);
-            if ((msg.return_code == MQTT_CONNACK_ACCEPTED) && (self->keep_alive > 0)) {
-                timer_start(&self->keep_alive_timer, TIMER_SEC, self->keep_alive);
+            if (msg.return_code == MQTT_CONNACK_ACCEPTED) {
+                if (self->keep_alive > 0)
+                    timer_start(&self->keep_alive_timer, TIMER_SEC, self->keep_alive);
                 stream_mqtt_set_status(self, STREAM_ST_READY);
             }
             bool handled_by_observer = stream_mqtt_notify_observer(self, frame->type, frame->flags, &msg);
@@ -497,6 +498,11 @@ ssize_t stream_mqtt_peek_frame(struct stream_mqtt *self)
 
         ret = stream_read(stream_mqtt_get_decorated(self), tmpbuf, sizeof(tmpbuf));
         if (ret <= 0) {
+            if (ret == 0 && self->client_role && !buffer_is_empty(&self->buffer)) {
+                // EOF with buffered bytes means the peer closed mid-frame
+                errno = EPROTO;
+                return -1;
+            }
             if ((ret == 0) || (errno != EAGAIN && errno != EWOULDBLOCK))
                 return ret;     // Error
 
@@ -512,18 +518,17 @@ ssize_t stream_mqtt_peek_frame(struct stream_mqtt *self)
                 struct mqtt_fixed_header frame;
                 size_t frame_length;
                 int body_offset = mqtt_parse_frame(&frame, self->buffer.data, self->buffer.length, &frame_length);
+                if (body_offset < 0) {
+                    buffer_reset(&self->buffer);
+                    errno = EPROTO;
+                    return -1;
+                }
                 if (body_offset == 0)
                     break;  // More data is needed
 
-                if (body_offset < 0) {
-                    // Error
-                    buffer_reset(&self->buffer);
-                }
-                else if (body_offset > 0) {
-                    // Received valid MQTT frame
-                    stream_mqtt_handle_received_frame(self, &frame, self->buffer.data+body_offset);
-                    buffer_cut(&self->buffer, frame_length);
-                }
+                if (stream_mqtt_handle_received_frame(self, &frame, self->buffer.data + body_offset) < 0)
+                    return -1;
+                buffer_cut(&self->buffer, frame_length);
             }
         }
     } while (ret > 0);
@@ -679,7 +684,12 @@ ssize_t stream_mqtt_publish(struct stream_mqtt *self, bool retain, bool dup, uns
         flags |= MQTT_DUP_FLAG;
 
 
-    size_t body_len = mqtt_eval_publish(qos, topic, payload_len);
+    size_t header_len = mqtt_eval_publish(qos, topic, 0);
+    if ((header_len > MQTT_MAX_REMAINING_LENGTH) || (payload_len > MQTT_MAX_REMAINING_LENGTH - header_len)) {
+        errno = EMSGSIZE;
+        return -1;
+    }
+    size_t body_len = header_len + payload_len;
     unsigned char *buffer = xmalloc(body_len + MQTT_MAX_FIXED_HEADER_SIZE);
     size_t offset = 0;
 

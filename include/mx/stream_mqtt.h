@@ -38,7 +38,8 @@ static inline int stream_mqtt_get_status(struct stream_mqtt *self) {
 void stream_mqtt_set_observer(struct stream_mqtt *self, void *object, stream_on_mqtt_msg_received_clbk handler);
 void stream_mqtt_remove_observer(struct stream_mqtt *self);
 
-
+/* Match an outbound frame. Zero matches any type or ID, respectively. */
+bool stream_mqtt_is_frame_pending(struct stream_mqtt *self, unsigned char type, unsigned short id);
 
 ssize_t stream_mqtt_peek_frame(struct stream_mqtt *self);
 ssize_t stream_mqtt_read_frame(struct stream_mqtt *self, unsigned char *type, unsigned char *flags,

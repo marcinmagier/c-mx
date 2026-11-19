@@ -46,10 +46,10 @@ int mqtt_decode_length(const unsigned char *buffer, size_t length, size_t *value
     size_t val = 0;
 
     do {
-        if (length <= (size_t)idx)
-            return 0;   // Need more data
         if (idx >= MQTT_MAX_LENGTH_SIZE)
             return -1;  // Error
+        if (length <= (size_t)idx)
+            return 0;   // Need more data
 
         c = buffer[idx++];
 
