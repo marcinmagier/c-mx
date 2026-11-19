@@ -320,6 +320,40 @@ bool stream_mqtt_notify_observer(struct stream_mqtt *self, unsigned char type, u
 
 
 /**
+ * Handle possible acknowledge of previously sent frame
+ *
+ * Return 1 when the ACK removes the in-flight packet, 0 when the exchange
+ * stays in its current state (including a successful PUBREL resend), or -1
+ * if the resend fails.
+ */
+static int stream_mqtt_acknowledge_outgoing(struct stream_mqtt *self, unsigned char type, unsigned short id)
+{
+    struct mqtt_frame_item *item = TAILQ_FIRST(&self->outgoing);
+    if (!item || !timer_running(&self->resend_timer))
+        return 0;   // No acknowledge is expected
+
+    if (id != item->id)
+        return 0;   // Received frame id doesn't match to previously sent one
+
+    if (type != mqtt_response_type(item->type, MQTT_QOS_FROM_FLAGS(item->flags))) {
+        // Received unexpected frame type
+        if ((type == MQTT_PUBREC) && (item->type == MQTT_PUBREL)) {
+            // Resend PUBREL
+            if (stream_mqtt_real_write(self, item->buffer.data, item->buffer.length) < 0)
+                return -1;
+        }
+        return 0;
+    }
+
+    // Expected response
+    TAILQ_REMOVE(&self->outgoing, item, _entry_);
+    mqtt_frame_item_delete(item);
+    timer_stop(&self->resend_timer);
+    return 1;
+}
+
+
+/**
  * Handle MQTT frame
  *
  */
@@ -333,6 +367,13 @@ static int stream_mqtt_handle_received_frame(struct stream_mqtt *self, struct mq
         if (frame->type == MQTT_CONNECT     || frame->type == MQTT_SUBSCRIBE ||
             frame->type == MQTT_UNSUBSCRIBE || frame->type == MQTT_PINGREQ ||
             frame->type == MQTT_DISCONNECT) {
+            errno = EPROTO;
+            return -1;
+        }
+    }
+    else {
+        if (frame->type == MQTT_CONNACK     || frame->type == MQTT_SUBACK ||
+            frame->type == MQTT_UNSUBACK    || frame->type == MQTT_PINGRESP) {
             errno = EPROTO;
             return -1;
         }
@@ -421,9 +462,13 @@ static int stream_mqtt_handle_received_frame(struct stream_mqtt *self, struct mq
         case MQTT_PUBCOMP: {
             struct mqtt_var_header_id varhdr;
             mqtt_parse_var_header_id(&varhdr, body, frame->body_length);
-            if (stream_mqtt_remove_frame(&self->outgoing, mqtt_request_type(frame->type), varhdr.id))
-                timer_stop(&self->resend_timer);
+            int result = stream_mqtt_acknowledge_outgoing(self, frame->type, varhdr.id);
+            if (result < 0)
+                return result;
+            if (result == 0)
+                break;
 
+            // Received expected response
             if (frame->type == MQTT_PUBREC) {
                 if (stream_mqtt_pubrel(self, varhdr.id) < 0)
                     return -1;
@@ -449,6 +494,9 @@ static int stream_mqtt_handle_received_frame(struct stream_mqtt *self, struct mq
                 }
                 if (!handled_by_observer)
                     stream_mqtt_append_frame(&self->incoming, frame->type, frame->flags, 0, body, frame->body_length);
+            }
+            else if ((frame->type == MQTT_PUBACK) || (frame->type == MQTT_PUBCOMP)) {
+                stream_mqtt_notify_observer(self, frame->type, frame->flags, &varhdr);
             }
         }   break;
 
@@ -535,7 +583,7 @@ ssize_t stream_mqtt_peek_frame(struct stream_mqtt *self)
 
         ret = stream_read(stream_mqtt_get_decorated(self), tmpbuf, sizeof(tmpbuf));
         if (ret <= 0) {
-            if (ret == 0 && self->client_role && !buffer_is_empty(&self->buffer)) {
+            if (ret == 0 && !buffer_is_empty(&self->buffer)) {
                 // EOF with buffered bytes means the peer closed mid-frame
                 errno = EPROTO;
                 return -1;

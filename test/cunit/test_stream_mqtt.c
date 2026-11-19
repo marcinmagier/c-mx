@@ -703,8 +703,8 @@ void test_stream_mqtt_resend_publish_pubrel(void)
     stream_mqtt_publish(client, false, false, MQTT_QOS_2, TEST_MSG_ID_3, TEST_TOPIC_3,
                                 (unsigned char *)TEST_PAYLOAD_3, strlen(TEST_PAYLOAD_3));
 
-    // Check resending
-    for (int i=0; i<3; i++) {
+    // Retry twice, then process the response before the exchange is abandoned.
+    for (int i=0; i<2; i++) {
         time += 33*1000;       // skip 33 seconds
         clock_update(time, time);
         stream_time(stream_mqtt_to_stream(client));     // Client should resend MSG_ID_1
@@ -713,25 +713,31 @@ void test_stream_mqtt_resend_publish_pubrel(void)
     stream_mqtt_peek_frame(server);     // Received MSG_ID_1, sent PUBREC
     stream_mqtt_peek_frame(client);     // Received PUBREC, sent PUBREL
 
-    // Check resending
-    for (int i=0; i<3; i++) {
+    // Retry twice, then process the response before the exchange is abandoned.
+    for (int i=0; i<2; i++) {
         time += 33*1000;       // skip 33 seconds
         clock_update(time, time);
         stream_time(stream_mqtt_to_stream(client));     // Client should resend PUBREL
     }
 
-    stream_mqtt_peek_frame(server);     // Received MSG_ID_2, sent PUBREC
-    stream_mqtt_peek_frame(client);     // Received PUBREC, sent PUBREL
-    stream_mqtt_peek_frame(server);     // Received PUBREL, sent PUBCOMP
+    stream_mqtt_peek_frame(server);     // Received PUBREL for MSG_ID_1, sent PUBCOMP
+    stream_mqtt_peek_frame(client);     // Received PUBCOMP for MSG_ID_1
+    stream_time(stream_mqtt_to_stream(client));     // Send queued MSG_ID_2
 
     bytes = stream_mqtt_read_frame(server, &type, &flags, buffer, sizeof(buffer));
+    CU_ASSERT_FATAL(bytes > 0);
     CU_ASSERT_EQUAL(type, MQTT_PUBLISH);
     mqtt_parse_publish(&publish_msg, buffer, bytes, MQTT_QOS_FROM_FLAGS(flags));
     CU_ASSERT_EQUAL(publish_msg.id, TEST_MSG_ID_1);
     CU_ASSERT_NSTRING_EQUAL(publish_msg.topic, TEST_TOPIC_1, strlen(TEST_TOPIC_1));
     CU_ASSERT_NSTRING_EQUAL(publish_msg.payload, TEST_PAYLOAD_1, strlen(TEST_PAYLOAD_1));
 
+    stream_mqtt_peek_frame(server);     // Received MSG_ID_2, sent PUBREC
+    stream_mqtt_peek_frame(client);     // Received PUBREC, sent PUBREL
+    stream_mqtt_peek_frame(server);     // Received PUBREL, sent PUBCOMP
+
     bytes = stream_mqtt_read_frame(server, &type, &flags, buffer, sizeof(buffer));
+    CU_ASSERT_FATAL(bytes > 0);
     CU_ASSERT_EQUAL(type, MQTT_PUBLISH);
     mqtt_parse_publish(&publish_msg, buffer, bytes, MQTT_QOS_FROM_FLAGS(flags));
     CU_ASSERT_EQUAL(publish_msg.id, TEST_MSG_ID_2);
