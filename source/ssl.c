@@ -26,131 +26,109 @@
 
 
 
-typedef struct verify_options_st {
-    int depth;
-    int quiet;
-    int error;
-    int return_error;
-} VERIFY_CB_ARGS;
-
-VERIFY_CB_ARGS verify_args = { -1, 0, X509_V_OK, 0 };
-
-
-
-int verify_callback(int ok, X509_STORE_CTX *ctx)
+static int verify_callback(int ok, X509_STORE_CTX *ctx)
 {
-    X509 *err_cert;
-    int err, depth;
-
-    err_cert = X509_STORE_CTX_get_current_cert(ctx);
-    err = X509_STORE_CTX_get_error(ctx);
-    depth = X509_STORE_CTX_get_error_depth(ctx);
-
-    if (!verify_args.quiet || !ok) {
-        printf("depth=%d ", depth);
-        if (err_cert != NULL) {
-            char *b = X509_NAME_oneline(X509_get_subject_name(err_cert), NULL, 0);
-            if (!b)
-                return 0;
-            if (!*b) {
-                OPENSSL_free(b);
-                return 1;
-            }
-            printf("%s\n", b);
-            OPENSSL_free(b);
-        } else {
-            printf("<no cert>\n");
-        }
-    }
     if (!ok) {
-        printf("verify error:num=%d:%s\n", err, X509_verify_cert_error_string(err));
-        if (verify_args.depth < 0 || verify_args.depth >= depth) {
-            if (!verify_args.return_error)
-                ok = 1;
-            verify_args.error = err;
-        } else {
-            ok = 0;
-            verify_args.error = X509_V_ERR_CERT_CHAIN_TOO_LONG;
-        }
+        int error = X509_STORE_CTX_get_error(ctx);
+        ERROR("TLS certificate verification failed at depth %d: %s",
+              X509_STORE_CTX_get_error_depth(ctx), X509_verify_cert_error_string(error));
     }
-    switch (err) {
-    case X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT:
-        printf("issuer= ");
-//        X509_NAME_print_ex(bio_err, X509_get_issuer_name(err_cert), 0, get_nameopt());
-        break;
-    case X509_V_ERR_CERT_NOT_YET_VALID:
-    case X509_V_ERR_ERROR_IN_CERT_NOT_BEFORE_FIELD:
-        printf("notBefore=");
-//        ASN1_TIME_print(bio_err, X509_get0_notBefore(err_cert));
-        break;
-    case X509_V_ERR_CERT_HAS_EXPIRED:
-    case X509_V_ERR_ERROR_IN_CERT_NOT_AFTER_FIELD:
-//        BIO_printf(bio_err, "notAfter=");
-//        ASN1_TIME_print(bio_err, X509_get0_notAfter(err_cert));
-//        BIO_printf(bio_err, "\n");
-        break;
-    case X509_V_ERR_NO_EXPLICIT_POLICY:
-//        if (!verify_args.quiet)
-//            policies_print(ctx);
-        break;
-    }
-//    if (err == X509_V_OK && ok == 2 && !verify_args.quiet)
-//        policies_print(ctx);
-    if (ok && !verify_args.quiet)
-        printf("verify return:%d\n", ok);
     return ok;
 }
 
 
-const char *psk_identity = "PSK-IDENTITY";
-const unsigned char psk_key[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1};
+#ifdef MX_SSL_HAS_TLS13_PSK
+struct ssl_psk {
+    size_t identity_len;
+    size_t key_len;
+    unsigned char key[SSL_MAX_MASTER_KEY_LENGTH];
+    unsigned char identity[];
+};
 
+static CRYPTO_ONCE psk_index_once = CRYPTO_ONCE_STATIC_INIT;
+static int psk_index = -1;
 
-unsigned int psk_client_cb(SSL *ssl, const char *hint,
-                                    char *identity, unsigned int max_identity_len,
-                                    unsigned char *psk, unsigned int max_psk_len)
+// OpenSSL uses the session reuse path for external PSKs.
+static const unsigned char psk_session_context[] = "mx-tls13-psk";
+
+static void ssl_psk_free(struct ssl_psk *psk)
 {
-    UNUSED(ssl);
-
-    int ret;
-
-    if (hint)
-        printf("PSK hint %s\n", hint);
-
-    ret = snprintf(identity, max_identity_len, "%s", psk_identity);
-    if (ret < 0 || (unsigned int)ret > max_identity_len)
-        return 0;
-
-    if (sizeof(psk_key) > max_psk_len)
-        return 0;
-
-    memcpy(psk, psk_key, sizeof(psk_key));
-
-    return sizeof(psk_key);
+    if (psk)
+        OPENSSL_clear_free(psk, sizeof(*psk) + psk->identity_len);
 }
 
-
-
-unsigned int psk_server_cb(SSL *ssl, const char *identity,
-                                     unsigned char *psk, unsigned int max_psk_len)
+static void ssl_psk_context_free(void *parent, void *ptr, CRYPTO_EX_DATA *data, int index,
+                                 long argl, void *argp)
 {
-    UNUSED(ssl);
-
-    if (identity)
-        printf("PSK identity %s\n", identity);
-
-    if (sizeof(psk_key) > max_psk_len)
-        return 0;
-
-    memcpy(psk, psk_key, sizeof(psk_key));
-
-    return sizeof(psk_key);
+    UNUSED(parent);
+    UNUSED(data);
+    UNUSED(index);
+    UNUSED(argl);
+    UNUSED(argp);
+    ssl_psk_free(ptr);
 }
 
+static void ssl_psk_init_index(void)
+{
+    psk_index = SSL_CTX_get_ex_new_index(0, NULL, NULL, NULL, ssl_psk_context_free);
+}
 
+static SSL_SESSION *ssl_psk_session(SSL *ssl, const struct ssl_psk *psk)
+{
+    const unsigned char cipher_id[] = { 0x13, 0x01 };  // TLS_AES_128_GCM_SHA256
+    const SSL_CIPHER *cipher = SSL_CIPHER_find(ssl, cipher_id);
+    SSL_SESSION *session = SSL_SESSION_new();
+    if (cipher && session &&
+        SSL_SESSION_set_protocol_version(session, TLS1_3_VERSION) &&
+        SSL_SESSION_set_cipher(session, cipher) &&
+        SSL_SESSION_set1_id_context(session, psk_session_context, sizeof(psk_session_context) - 1) &&
+        SSL_SESSION_set1_master_key(session, psk->key, psk->key_len))
+        return session;
 
+    SSL_SESSION_free(session);
+    return NULL;
+}
 
+static int ssl_psk_use_session(SSL *ssl, const EVP_MD *digest, const unsigned char **identity,
+                               size_t *identity_len, SSL_SESSION **session)
+{
+    const struct ssl_psk *psk = SSL_CTX_get_ex_data(SSL_get_SSL_CTX(ssl), psk_index);
+    if (!psk || (digest && EVP_MD_type(digest) != NID_sha256))
+        return 0;
 
+    *identity = psk->identity;
+    *identity_len = psk->identity_len;
+    *session = ssl_psk_session(ssl, psk);
+    return *session != NULL;
+}
+
+static int ssl_psk_find_session(SSL *ssl, const unsigned char *identity, size_t identity_len,
+                                SSL_SESSION **session)
+{
+    const struct ssl_psk *psk = SSL_CTX_get_ex_data(SSL_get_SSL_CTX(ssl), psk_index);
+    *session = NULL;
+    if (!psk || psk->identity_len != identity_len || memcmp(psk->identity, identity, identity_len))
+        return 1;  // This identity does not select a PSK.
+
+    *session = ssl_psk_session(ssl, psk);
+    return *session != NULL;
+}
+
+/* Prevent certificate authentication if the peer does not select the PSK. */
+static int ssl_psk_reject_local_certificate(SSL *ssl, void *arg)
+{
+    UNUSED(ssl);
+    UNUSED(arg);
+    return 0;
+}
+
+static int ssl_psk_reject_peer_certificate(X509_STORE_CTX *ctx, void *arg)
+{
+    UNUSED(arg);
+    X509_STORE_CTX_set_error(ctx, X509_V_ERR_APPLICATION_VERIFICATION);
+    return 0;
+}
+#endif
 
 
 static unsigned int ssl_usage = 0;
@@ -184,6 +162,7 @@ void ssl_init(struct ssl *self)
         ssl_global_init();
 
 
+    self->psk_configured = false;
     self->ctx = SSL_CTX_new(TLS_method());
     if (!self->ctx)
         RESET("Could not create ssl context");
@@ -252,20 +231,79 @@ void ssl_set_cafile(struct ssl *self, const char *cafile)
 
 void ssl_set_verify_peer(struct ssl *self, bool verify)
 {
+    if (self->psk_configured)
+        return;  // PSK mode controls certificate handling.
+
     int verify_flags = SSL_VERIFY_NONE;
     if (verify)
-        verify = SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT | SSL_VERIFY_CLIENT_ONCE;
+        verify_flags = SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT | SSL_VERIFY_CLIENT_ONCE;
 
-    SSL_CTX_set_verify(self->ctx, verify_flags, verify_callback);
+    SSL_CTX_set_verify(self->ctx, verify_flags, verify ? verify_callback : NULL);
 }
 
 
-void ssl_set_psk(struct ssl *self, const char *identity, const char *psk)
+int ssl_set_psk(struct ssl *self, const char *identity, const unsigned char *key, size_t key_len)
 {
+#ifdef MX_SSL_HAS_TLS13_PSK
+    if (!self || !identity || !key || key_len < 16 || key_len > SSL_MAX_MASTER_KEY_LENGTH) {
+        errno = EINVAL;
+        return -1;
+    }
+    size_t identity_len = strlen(identity);
+    if (identity_len == 0 || identity_len > 255) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (self->psk_configured) {
+        errno = EALREADY;
+        return -1;
+    }
+    if (!CRYPTO_THREAD_run_once(&psk_index_once, ssl_psk_init_index) || psk_index < 0) {
+        errno = EIO;
+        return -1;
+    }
+
+    struct ssl_psk *psk = OPENSSL_malloc(sizeof(*psk) + identity_len);
+    if (!psk) {
+        errno = ENOMEM;
+        return -1;
+    }
+    psk->identity_len = identity_len;
+    psk->key_len = key_len;
+    memcpy(psk->identity, identity, identity_len);
+    memcpy(psk->key, key, key_len);
+
+    SSL_CTX *ctx = self->ctx;
+    if (!SSL_CTX_set_ex_data(ctx, psk_index, psk)) {
+        ssl_psk_free(psk);
+        errno = EIO;
+        return -1;
+    }
+
+    int previous_min_version = SSL_CTX_get_min_proto_version(ctx);
+    if (!SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION) ||
+        !SSL_CTX_set_ciphersuites(ctx, "TLS_AES_128_GCM_SHA256")) {
+        SSL_CTX_set_min_proto_version(ctx, previous_min_version);
+        SSL_CTX_set_ex_data(ctx, psk_index, NULL);
+        ssl_psk_free(psk);
+        errno = EIO;
+        return -1;
+    }
+
+    SSL_CTX_set_session_id_context(ctx, psk_session_context, sizeof(psk_session_context) - 1);
+    SSL_CTX_set_psk_use_session_callback(ctx, ssl_psk_use_session);
+    SSL_CTX_set_psk_find_session_callback(ctx, ssl_psk_find_session);
+    SSL_CTX_set_cert_cb(ctx, ssl_psk_reject_local_certificate, NULL);
+    SSL_CTX_set_cert_verify_callback(ctx, ssl_psk_reject_peer_certificate, NULL);
+    SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
+    self->psk_configured = true;
+    return 0;
+#else
     UNUSED(self);
     UNUSED(identity);
-    UNUSED(psk);
-
-    //    SSL_CTX_set_psk_client_callback(ctx, psk_client_cb);
-    //    SSL_CTX_set_psk_server_callback(ctx, psk_server_cb);
+    UNUSED(key);
+    UNUSED(key_len);
+    errno = ENOTSUP;
+    return -1;
+#endif
 }
