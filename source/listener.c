@@ -136,7 +136,8 @@ int listener_start(struct listener *self)
         INFO("Listening on %s", self->address);
     }
     else {
-        fd = socket_create_inet_stream();
+        fd = strchr(self->address, ':') ? socket_create_inet6_stream()
+                                        : socket_create_inet_stream();
         if (fd == -1)
             return -1;
         socket_set_reuse_addr(fd, 1);

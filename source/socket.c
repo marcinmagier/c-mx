@@ -328,7 +328,7 @@ int socket_listen_inet(int sock, const char *addr, unsigned int port)
     int ret = getaddrinfo(addr, NULL, &hints, &result);
     if (ret != 0) {
         ERROR("Cannot resolve %s, getaddrinfo error %d", addr, ret);
-        return ret;
+        return -1;
     }
 
     for (struct addrinfo *res=result; res; res=res->ai_next) {

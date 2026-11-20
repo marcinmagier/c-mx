@@ -18,6 +18,12 @@ static inline int socket_create_inet_stream(void) {
 static inline int socket_create_inet_datagram(void) {
     return socket_open(AF_INET, SOCK_DGRAM);
 }
+static inline int socket_create_inet6_stream(void) {
+    return socket_open(AF_INET6, SOCK_STREAM);
+}
+static inline int socket_create_inet6_datagram(void) {
+    return socket_open(AF_INET6, SOCK_DGRAM);
+}
 static inline int socket_create_unix_stream(void) {
     return socket_open(AF_UNIX, SOCK_STREAM);
 }
