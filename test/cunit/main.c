@@ -45,8 +45,11 @@ struct test_module
 
 extern CU_ErrorCode cu_test_log();
 extern CU_ErrorCode cu_test_http();
+extern CU_ErrorCode cu_test_listener(void);
 extern CU_ErrorCode cu_test_misc();
+extern CU_ErrorCode cu_test_mqtt(void);
 extern CU_ErrorCode cu_test_stream();
+extern CU_ErrorCode cu_test_stream_ssl();
 extern CU_ErrorCode cu_test_stream_mqtt();
 extern CU_ErrorCode cu_test_stream_ws();
 extern CU_ErrorCode cu_test_string();
@@ -55,8 +58,11 @@ extern CU_ErrorCode cu_test_timer();
 const struct test_module test_modules[] = {
         {"log",             cu_test_log},
         {"http",            cu_test_http},
+        {"listener",        cu_test_listener},
         {"misc",            cu_test_misc},
+        {"mqtt",            cu_test_mqtt},
         {"stream",          cu_test_stream},
+        {"stream_ssl",      cu_test_stream_ssl},
         {"stream_mqtt",     cu_test_stream_mqtt},
         {"stream_ws",       cu_test_stream_ws},
         {"string",          cu_test_string},
